@@ -1,0 +1,24 @@
+{
+  "assets": [
+    {
+      "tenant_id": "companyA",
+      "site_id": "plant-north",
+      "machine_id": "GEN-KD27-003",
+      "machine_model": "KD27V12",
+      "machine_family": "generator",
+      "criticality": "high",
+      "active_manual_version": "v7.1",
+      "aliases": ["gen-3", "north-backup-generator", "kohler-27"]
+    },
+    {
+      "tenant_id": "companyA",
+      "site_id": "plant-south",
+      "machine_id": "GEN-KD27-007",
+      "machine_model": "KD27V12",
+      "machine_family": "generator",
+      "criticality": "high",
+      "active_manual_version": "v7.1",
+      "aliases": ["gen-7", "south-primary-generator"]
+    }
+  ]
+}

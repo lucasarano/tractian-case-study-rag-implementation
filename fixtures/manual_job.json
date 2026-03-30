@@ -1,0 +1,180 @@
+{
+  "doc_id": "kohler_kd27v12_om_33521029401",
+  "manufacturer": "Kohler",
+  "machine_model": "KD27V12",
+  "machine_family": "generator",
+  "manual_version": "v7.1",
+  "pdf_path": "fixtures/manuals/kohler_generator_manual.pdf",
+  "activate_version": true,
+  "pages": [
+    {
+      "page": 36,
+      "section_path": ["Operating Faults", "Errors – Cause – Remedy"],
+      "text": "Starter motor does not turn. Main fuse is blown — replace the fuse. Battery connections are loose or corroded — clean and tighten the loose connections. Battery voltage is too low — charge or replace the battery. Starter circuit is defective or the contacts are corroded — contact your nearest authorized Kohler service representative. Starter is defective — contact your nearest authorized Kohler service representative.",
+      "table_rows": [
+        {
+          "malfunction": "Starter motor does not turn",
+          "cause": "Main fuse is blown",
+          "remedy": "Replace the fuse"
+        },
+        {
+          "malfunction": "Starter motor does not turn",
+          "cause": "Battery connections are loose or corroded",
+          "remedy": "Clean and tighten the loose connections"
+        },
+        {
+          "malfunction": "Starter motor does not turn",
+          "cause": "Battery voltage is too low",
+          "remedy": "Charge or replace the battery"
+        }
+      ],
+      "visual_summaries": []
+    },
+    {
+      "page": 37,
+      "section_path": ["Operating Faults", "Errors – Cause – Remedy"],
+      "text": "Engine will not start and/or stops again immediately. Fuel tank is empty — refuel and vent the fuel system. Main fuel filter is clogged — replace the fuel filter. Fuel line, pre-cleaner or sieve in fuel tank is clogged — clean and vent the fuel system. Fuel system or filter is leaking — seal and ventilate. Outside temperature is too low — take appropriate action for winter operation.",
+      "table_rows": [
+        {
+          "malfunction": "Engine will not start",
+          "cause": "Fuel tank is empty",
+          "remedy": "Refuel and vent the fuel system"
+        },
+        {
+          "malfunction": "Engine will not start",
+          "cause": "Main fuel filter is clogged",
+          "remedy": "Replace the fuel filter"
+        },
+        {
+          "malfunction": "Engine suddenly switches off",
+          "cause": "Voltage supply was interrupted",
+          "remedy": "Contact authorized Kohler service representative"
+        }
+      ],
+      "visual_summaries": []
+    },
+    {
+      "page": 38,
+      "section_path": ["Operating Faults", "Errors – Cause – Remedy"],
+      "text": "Power of the engine is too low (lack of power). There is a fault in the fuel system (blockage, leak) — carry out a visual inspection for leaks, replace the filter. Charging pressure is too low — V-band clamps are loose, seals and hoses are defective, air filter is contaminated, exhaust gas turbocharger defective. Charge air temperature is too high — charge air cooler is contaminated, fan power is reduced, ambient temperature is too high. Coolant temperature is too high — check the cooler for soiling, check the fan and thermostat, check the coolant level.",
+      "table_rows": [
+        {
+          "malfunction": "Power of the engine is too low",
+          "cause": "Fault in the fuel system (blockage, leak)",
+          "remedy": "Visual inspection for leaks, replace the filter"
+        },
+        {
+          "malfunction": "Power of the engine is too low",
+          "cause": "Coolant temperature is too high",
+          "remedy": "Check cooler for soiling, check fan and thermostat, check coolant level"
+        },
+        {
+          "malfunction": "Power of the engine is too low",
+          "cause": "Charge air temperature is too high",
+          "remedy": "Check charge air cooler contamination, fan power, ambient temperature"
+        }
+      ],
+      "visual_summaries": []
+    },
+    {
+      "page": 39,
+      "section_path": ["Operating Faults", "Errors – Cause – Remedy"],
+      "text": "Charging current display illuminates when engine is running. Tension of the V-ribbed belt is insufficient — check the tension and replace the tightening roller if necessary. V-ribbed belt is worn — replace the V-ribbed belt. Cable connections are loose or disconnected — fasten or replace the cable. Black smoke is coming out of the engine. Injectors are defective or inefficient. Exhaust gas turbocharger has a fault (too low charging pressure). Engine is overloaded.",
+      "table_rows": [
+        {
+          "malfunction": "Black smoke from engine",
+          "cause": "Injectors are defective or inefficient",
+          "remedy": "Contact authorized Kohler service representative"
+        },
+        {
+          "malfunction": "Black smoke from engine",
+          "cause": "Exhaust gas turbocharger fault (low charging pressure)",
+          "remedy": "Contact authorized Kohler service representative"
+        },
+        {
+          "malfunction": "Exhaust gases are blue",
+          "cause": "Oil level in engine is too high",
+          "remedy": "Check and correct the oil level"
+        }
+      ],
+      "visual_summaries": []
+    },
+    {
+      "page": 40,
+      "section_path": ["Operating Faults", "Errors – Cause – Remedy"],
+      "text": "Engine knocks. Fault during combustion. Error in valve clearance — adjust the valve clearance. Injectors are damaged or carbonized. Bearing damages. Piston rings are worn or defective, pistons are eroded. Abnormal noises — intake lines and exhaust pipes are leaking, causing a whistling noise — seal the leaks and replace the gaskets if necessary. Engine oil pressure is too low — oil level in oil pan is too low — fill oil to prescribed mark.",
+      "table_rows": [
+        {
+          "malfunction": "Engine knocks",
+          "cause": "Error in valve clearance",
+          "remedy": "Adjust the valve clearance"
+        },
+        {
+          "malfunction": "Engine oil pressure is too low",
+          "cause": "Oil level in oil pan is too low",
+          "remedy": "Fill oil to prescribed mark"
+        },
+        {
+          "malfunction": "Engine oil pressure is too low",
+          "cause": "Lubricating oil is too thin (oil diluted by diesel fuel)",
+          "remedy": "Change lubricating oil and filter; determine cause of dilution"
+        }
+      ],
+      "visual_summaries": []
+    },
+    {
+      "page": 90,
+      "section_path": ["Operating Fluids and Maintenance", "Lubrication System", "Checking the Oil Level"],
+      "text": "Checking the oil level — SL0-2011. Make sure that the following prerequisites are met: the engine is horizontal, the engine is turned off. Pull out oil dipstick, wipe with a clean cloth and reinsert to limit stop. Remove oil dipstick again and check oil level. The oil level must be between min and max. If the oil level is below the min mark: refill lubricating oil through oil filler neck. Do not fill engine with oil above the max mark.",
+      "table_rows": [],
+      "visual_summaries": [
+        "Diagram showing oil dipstick location and oil filler neck position on the KD27V12 engine block; dipstick is labeled item 2, oil filler neck is labeled item 1."
+      ]
+    },
+    {
+      "page": 95,
+      "section_path": ["Operating Fluids and Maintenance", "Lubrication System", "Replacing the Oil Filter"],
+      "text": "Replacing the oil filter — SL1-2110. Release oil filter with a strap wrench or similar tool and unscrew it. WARNING: Hot engine oil! Risk of burns. Avoid skin contact with the engine oil. Wear protective gloves when changing the engine oil. Dispose of oil filter observing country-specific regulations. Coat seal on new oil filter with lubricating oil. Screw in new oil filter until sealing ring rests against oil module. Tighten: screw in by hand until seal is in place, then 1/2 turn (25 ±5 Nm).",
+      "table_rows": [
+        {
+          "stage": "1",
+          "instruction": "Screw in by hand until seal is in place"
+        },
+        {
+          "stage": "2",
+          "instruction": "1/2 turn (25 ±5 Nm)"
+        }
+      ],
+      "visual_summaries": [
+        "Illustration of oil filter replacement on KD27V12 engine showing filter location labeled as item 1, with strap wrench removal technique."
+      ]
+    },
+    {
+      "page": 97,
+      "section_path": ["Operating Fluids and Maintenance", "Cooling System", "Checking the Coolant Level"],
+      "text": "Checking the coolant level — SL0-3011. WARNING: Hot cooler parts and hot coolant! Serious burns possible. Let engine cool down to below 50°C before all work. Wear protective gloves and safety goggles. If the coolant level is too low or too high: do not start engine, refill coolant. Coolant fill quantity: 55 l (14.5 US gal).",
+      "table_rows": [],
+      "visual_summaries": [
+        "Warning diagram showing hot coolant hazard areas on the KD27V12 cooling system; protective equipment icons for gloves and goggles."
+      ]
+    },
+    {
+      "page": 104,
+      "section_path": ["Operating Fluids and Maintenance", "Fuel System", "Replacing the Main Fuel Filter"],
+      "text": "Replacing the main fuel filter — SL1-4120. WARNING: Open flames — injuries, fire and explosion. Avoid open flames or other ignition sources when performing maintenance or inspection work on the fuel system. Place collection container under main fuel filter. Clean the main fuel filter and surrounding area carefully. Loosen the main fuel filter with a strap wrench or similar tool and unscrew. Never reuse a main fuel filter after it has been used once. Coat sealing ring on main fuel filter with lubricating oil. Screw in new main fuel filter until sealing ring rests against filter module. Tighten: screw in by hand until seal is in place, then 3/4 turn (22.5 Nm).",
+      "table_rows": [
+        {
+          "stage": "1",
+          "instruction": "Screw in by hand until seal is in place"
+        },
+        {
+          "stage": "2",
+          "instruction": "3/4 turn (22.5 Nm)"
+        }
+      ],
+      "visual_summaries": [
+        "Diagram of KD27V12 fuel system showing main fuel filter location labeled as item 1; collection container placement shown below filter module."
+      ]
+    }
+  ]
+}

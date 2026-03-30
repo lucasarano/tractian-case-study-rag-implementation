@@ -17,6 +17,12 @@ import httpx
 import jwt
 from pydantic import BaseModel
 
+from maintenance_copilot.answering import (
+    build_direct_information_answer,
+    build_information_follow_up,
+    is_informational_query,
+    select_answer_evidence,
+)
 from maintenance_copilot.config import Settings
 from maintenance_copilot.domain import (
     AssetMetadata,
@@ -470,9 +476,12 @@ class GeminiAnswerGenerator:
             location=self.settings.google_location,
         )
 
+        informational_query = is_informational_query(user_text)
+        selected_evidence = select_answer_evidence(user_text, evidence)
         supporting: list[SupportingEvidence] = []
         manual_citation_ids: set[str] = set()
-        for index, item in enumerate(evidence, start=1):
+        manual_evidence = [item for item in selected_evidence if item.chunk.is_manual]
+        for index, item in enumerate(selected_evidence, start=1):
             prefix = "M" if item.chunk.is_manual else "L"
             citation_id = f"{prefix}{index}"
             supporting.append(
@@ -502,6 +511,13 @@ class GeminiAnswerGenerator:
             "Every recommended check must cite at least one citation_id. "
             "If there is no OEM support for a procedure, do not propose that procedure."
         )
+        if informational_query:
+            system_instruction += (
+                " For definition, explanation, or summary questions, answer directly in issue_summary. "
+                "Do not describe the user's intent. "
+                "Do not force suspected causes, escalation, or troubleshooting steps unless the user explicitly asks for a procedure. "
+                "If the loaded manual evidence does not answer the question, say that directly."
+            )
         contents = [
             {
                 "role": "user",
@@ -548,6 +564,28 @@ class GeminiAnswerGenerator:
                 continue
             checks.append(raw_check)
 
+        if informational_query:
+            return CopilotAnswer(
+                issue_summary=build_direct_information_answer(
+                    user_text=user_text,
+                    manual_evidence=manual_evidence,
+                    candidate_answer=draft.issue_summary,
+                ),
+                suspected_causes=[],
+                recommended_checks=[],
+                required_tools=[],
+                safety_warnings=draft.safety_warnings if manual_evidence else [],
+                supporting_evidence=supporting,
+                confidence=self._information_confidence(manual_evidence, draft.confidence),
+                urgency="low",
+                escalate_if=[],
+                follow_up_question=(
+                    draft.follow_up_question
+                    if draft.follow_up_question and not draft.follow_up_question.lower().startswith("what symptom")
+                    else build_information_follow_up(user_text, manual_evidence)
+                ),
+            )
+
         if not checks:
             return CopilotAnswer(
                 issue_summary=draft.issue_summary or user_text,
@@ -588,6 +626,20 @@ class GeminiAnswerGenerator:
             escalate_if=draft.escalate_if,
             follow_up_question=draft.follow_up_question,
         )
+
+    def _information_confidence(
+        self,
+        manual_evidence: Sequence[RetrievedChunk],
+        draft_confidence: float,
+    ) -> float:
+        if not manual_evidence:
+            return min(draft_confidence, 0.25)
+        evidence_scores = [
+            min(max(item.blended_score, 0.25), 1.0)
+            for item in manual_evidence[:3]
+        ]
+        evidence_confidence = sum(evidence_scores) / len(evidence_scores)
+        return round((evidence_confidence + max(draft_confidence, 0.35)) / 2, 2)
 
 
 class DocumentAiLayoutParser:

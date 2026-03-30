@@ -6,6 +6,12 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
+from maintenance_copilot.answering import (
+    build_direct_information_answer,
+    build_information_follow_up,
+    is_informational_query,
+    select_answer_evidence,
+)
 from maintenance_copilot.domain import (
     AnswerEnvelope,
     AnswerRequest,
@@ -70,12 +76,14 @@ class CitationFirstAnswerComposer:
         state: SessionState,
         evidence: list[RetrievedChunk],
     ) -> CopilotAnswer:
+        selected_evidence = select_answer_evidence(user_text, evidence)
         supporting: list[SupportingEvidence] = []
         chunk_to_citation: dict[str, str] = {}
-        manual_evidence = [item for item in evidence if item.chunk.is_manual]
-        log_evidence = [item for item in evidence if not item.chunk.is_manual]
+        manual_evidence = [item for item in selected_evidence if item.chunk.is_manual]
+        log_evidence = [item for item in selected_evidence if not item.chunk.is_manual]
+        informational_query = is_informational_query(user_text)
 
-        for index, item in enumerate(evidence, start=1):
+        for index, item in enumerate(selected_evidence, start=1):
             prefix = "M" if item.chunk.is_manual else "L"
             citation_id = f"{prefix}{index}"
             chunk_to_citation[item.chunk.chunk_id] = citation_id
@@ -89,6 +97,22 @@ class CitationFirstAnswerComposer:
             )
 
         issue_summary = state.issue_summary or user_text
+        if informational_query:
+            return CopilotAnswer(
+                issue_summary=build_direct_information_answer(
+                    user_text=user_text,
+                    manual_evidence=manual_evidence,
+                ),
+                suspected_causes=[],
+                recommended_checks=[],
+                required_tools=[],
+                safety_warnings=self._safety_warnings(manual_evidence, asset),
+                supporting_evidence=supporting,
+                confidence=self._information_confidence(manual_evidence),
+                urgency="low",
+                escalate_if=[],
+                follow_up_question=build_information_follow_up(user_text, manual_evidence),
+            )
         if not manual_evidence:
             return CopilotAnswer(
                 issue_summary=issue_summary,
@@ -203,6 +227,12 @@ class CitationFirstAnswerComposer:
                 "if the symptom escalates during inspection."
             )
         return list(dict.fromkeys(warnings))
+
+    def _information_confidence(self, manual_evidence: list[RetrievedChunk]) -> float:
+        if not manual_evidence:
+            return 0.2
+        scores = [min(max(item.blended_score, 0.2), 1.0) for item in manual_evidence[:3]]
+        return round(sum(scores) / len(scores), 2)
 
     def _required_tools(
         self,

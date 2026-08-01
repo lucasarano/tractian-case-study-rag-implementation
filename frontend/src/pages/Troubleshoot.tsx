@@ -44,6 +44,7 @@ const FIXED_CONTEXT = {
 export default function RagFunctionality() {
   const [message, setMessage] = useState("");
   const [sessionId, setSessionId] = useState("");
+  const [continueSessionId, setContinueSessionId] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>("idle");
   const [result, setResult] = useState<AnswerEnvelope | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +58,10 @@ export default function RagFunctionality() {
     [],
   );
 
-  const fillFollowUp = useCallback((q: string) => setMessage(q), []);
+  const fillFollowUp = useCallback((q: string) => {
+    setMessage(q);
+    setContinueSessionId(sessionId || null);
+  }, [sessionId]);
 
   const handleSubmit = useCallback(async () => {
     if (!message.trim()) return;
@@ -74,7 +78,7 @@ export default function RagFunctionality() {
       const promise = api.answer({
         message,
         ...FIXED_CONTEXT,
-        session_id: sessionId || undefined,
+        session_id: continueSessionId || undefined,
       });
 
       setStage("retrieve");
@@ -88,13 +92,14 @@ export default function RagFunctionality() {
       setStage("done");
       setResult(res);
       setSessionId(res.session_id);
+      setContinueSessionId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request failed");
       setStage("idle");
     } finally {
       setLoading(false);
     }
-  }, [message, sessionId]);
+  }, [continueSessionId, message]);
 
   const PILLS = [
     { id: "load_context" as const, label: "Context", Icon: Database },
@@ -124,7 +129,10 @@ export default function RagFunctionality() {
           <div className="mt-5 flex gap-3">
             <input
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={(e) => {
+                setMessage(e.target.value);
+                setContinueSessionId(null);
+              }}
               placeholder="e.g. Low oil pressure at 2.0 bar under load — what should I check?"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !loading) void handleSubmit();

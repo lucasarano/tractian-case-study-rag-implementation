@@ -19,8 +19,18 @@ from pydantic import BaseModel
 
 from maintenance_copilot.answering import (
     build_direct_information_answer,
+    build_direct_procedure_answer,
+    build_direct_troubleshooting_answer,
     build_information_follow_up,
+    build_manual_procedure_checks,
+    build_manual_troubleshooting_checks,
+    build_procedure_follow_up,
+    build_troubleshooting_follow_up,
+    extract_manual_safety_warnings,
+    filter_procedure_evidence,
+    is_check_request,
     is_informational_query,
+    is_procedural_query,
     select_answer_evidence,
 )
 from maintenance_copilot.config import Settings
@@ -348,13 +358,14 @@ class OktaJWTVerifier:
 
 
 class VertexTextEmbedder:
+    BATCH_SIZE = 24
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
     def embed_texts(self, texts: Sequence[str]) -> list[list[float]]:
-        return [self.embed_query(text) for text in texts]
-
-    def embed_query(self, text: str) -> list[float]:
+        if not texts:
+            return []
         from google import genai
         from google.genai import types
 
@@ -363,14 +374,21 @@ class VertexTextEmbedder:
             project=self.settings.google_project,
             location=self.settings.google_location,
         )
-        response = client.models.embed_content(
-            model=self.settings.text_embedding_model,
-            contents=[text],
-            config=types.EmbedContentConfig(
-                output_dimensionality=self.settings.text_embedding_dimensions,
-            ),
-        )
-        return list(response.embeddings[0].values)
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self.BATCH_SIZE):
+            batch = list(texts[start : start + self.BATCH_SIZE])
+            response = client.models.embed_content(
+                model=self.settings.text_embedding_model,
+                contents=batch,
+                config=types.EmbedContentConfig(
+                    output_dimensionality=self.settings.text_embedding_dimensions,
+                ),
+            )
+            vectors.extend(list(item.values) for item in response.embeddings)
+        return vectors
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_texts([text])[0]
 
 
 class GeminiIncidentNormalizer:
@@ -477,13 +495,19 @@ class GeminiAnswerGenerator:
         )
 
         informational_query = is_informational_query(user_text)
+        procedural_query = is_procedural_query(user_text)
+        check_request = is_check_request(user_text)
         selected_evidence = select_answer_evidence(user_text, evidence)
+        if procedural_query:
+            selected_evidence = filter_procedure_evidence(user_text, selected_evidence)
         supporting: list[SupportingEvidence] = []
         manual_citation_ids: set[str] = set()
+        chunk_to_citation: dict[str, str] = {}
         manual_evidence = [item for item in selected_evidence if item.chunk.is_manual]
         for index, item in enumerate(selected_evidence, start=1):
             prefix = "M" if item.chunk.is_manual else "L"
             citation_id = f"{prefix}{index}"
+            chunk_to_citation[item.chunk.chunk_id] = citation_id
             supporting.append(
                 SupportingEvidence(
                     citation_id=citation_id,
@@ -494,6 +518,56 @@ class GeminiAnswerGenerator:
             )
             if item.chunk.is_manual:
                 manual_citation_ids.add(citation_id)
+
+        if procedural_query:
+            checks = build_manual_procedure_checks(
+                user_text=user_text,
+                manual_evidence=manual_evidence,
+                citations_by_chunk_id=chunk_to_citation,
+            )
+            return CopilotAnswer(
+                issue_summary=build_direct_procedure_answer(
+                    user_text=user_text,
+                    manual_evidence=manual_evidence,
+                    checks=checks,
+                ),
+                suspected_causes=[],
+                recommended_checks=checks,
+                required_tools=[],
+                safety_warnings=extract_manual_safety_warnings(manual_evidence),
+                supporting_evidence=supporting,
+                confidence=self._information_confidence(manual_evidence, 0.8 if checks else 0.35),
+                urgency="low",
+                escalate_if=[],
+                follow_up_question=build_procedure_follow_up(user_text, checks),
+            )
+        if check_request:
+            checks = build_manual_troubleshooting_checks(
+                user_text=user_text,
+                manual_evidence=manual_evidence,
+                citations_by_chunk_id=chunk_to_citation,
+            )
+            if checks:
+                return CopilotAnswer(
+                    issue_summary=build_direct_troubleshooting_answer(
+                        user_text=user_text,
+                        manual_evidence=manual_evidence,
+                        checks=checks,
+                    )
+                    or user_text,
+                    suspected_causes=[],
+                    recommended_checks=checks,
+                    required_tools=[],
+                    safety_warnings=extract_manual_safety_warnings(manual_evidence),
+                    supporting_evidence=supporting,
+                    confidence=self._information_confidence(manual_evidence, 0.8),
+                    urgency=self._manual_check_urgency(user_text, asset),
+                    escalate_if=[
+                        "The cited OEM checks do not restore the machine to a safe operating state.",
+                        "The symptom persists after the cited manual checks are completed.",
+                    ],
+                    follow_up_question=build_troubleshooting_follow_up(user_text, checks),
+                )
 
         evidence_payload = [
             {
@@ -627,6 +701,16 @@ class GeminiAnswerGenerator:
             follow_up_question=draft.follow_up_question,
         )
 
+    def _manual_check_urgency(self, user_text: str, asset: AssetMetadata) -> str:
+        lowered = user_text.lower()
+        if asset.criticality == "high":
+            return "high"
+        if any(token in lowered for token in ["overheat", "shutdown", "trip", "smoke", "burning"]):
+            return "high"
+        if any(token in lowered for token in ["pressure", "leak", "temperature", "oil"]):
+            return "medium"
+        return "low"
+
     def _information_confidence(
         self,
         manual_evidence: Sequence[RetrievedChunk],
@@ -684,27 +768,51 @@ class DocumentAiLayoutParser:
                 p.page += page_offset
                 pages.append(p)
 
+        for page in pages:
+            if self._looks_like_table_text(page.text):
+                recovered_rows = self._recover_table_rows_from_text(page.text)
+                if self._is_troubleshooting_table_text(page.text):
+                    if not page.table_rows:
+                        page.table_rows = recovered_rows
+                else:
+                    page.table_rows = self._merge_table_rows(page.table_rows, recovered_rows)
+
         text_pages = sum(1 for p in pages if p.text.strip())
         logger.info(
             "parse_pdf: %d total pages, %d with text",
             len(pages),
             text_pages,
         )
-        needs_ocr = any(
-            len(page.text.strip()) < self.settings.manual_visual_low_text_threshold
-            for page in pages
-        )
+        needs_ocr = any(self._needs_ocr(page) for page in pages)
         if self.settings.documentai_ocr_processor_id and needs_ocr:
             ocr_pages = self._run_ocr(document_bytes)
             page_by_number = {page.page: page for page in ocr_pages}
             for page in pages:
-                if len(page.text.strip()) < self.settings.manual_visual_low_text_threshold:
+                if self._needs_ocr(page):
                     ocr_page = page_by_number.get(page.page)
                     if ocr_page and ocr_page.text:
                         page.text = ocr_page.text
+                        recovered_rows = self._recover_table_rows_from_text(ocr_page.text)
+                        if self._is_troubleshooting_table_text(ocr_page.text):
+                            page.table_rows = (
+                                page.table_rows
+                                or ocr_page.table_rows
+                                or recovered_rows
+                            )
+                        else:
+                            page.table_rows = self._merge_table_rows(
+                                page.table_rows,
+                                ocr_page.table_rows,
+                                recovered_rows,
+                            )
                         page.text_confidence = max(page.text_confidence, ocr_page.text_confidence)
                         page.ocr_applied = True
         return pages
+
+    def _needs_ocr(self, page: ParsedManualPage) -> bool:
+        if len(page.text.strip()) < self.settings.manual_visual_low_text_threshold:
+            return True
+        return self._looks_like_table_text(page.text) and len(page.table_rows) < 2
 
     def _run_ocr(self, document_bytes: bytes) -> list[ParsedManualPage]:
         from google.cloud import documentai
@@ -732,6 +840,247 @@ class DocumentAiLayoutParser:
                 p.page += page_offset
                 pages.append(p)
         return pages
+
+    @staticmethod
+    def _merge_table_rows(*row_groups: Sequence[dict[str, str]]) -> list[dict[str, str]]:
+        merged: list[dict[str, str]] = []
+        seen: set[tuple[tuple[str, str], ...]] = set()
+        for rows in row_groups:
+            for row in rows:
+                cleaned = {
+                    key: " ".join(value.split())
+                    for key, value in row.items()
+                    if value and value.strip()
+                }
+                if not cleaned:
+                    continue
+                marker = tuple(sorted(cleaned.items()))
+                if marker in seen:
+                    continue
+                seen.add(marker)
+                merged.append(cleaned)
+        return merged
+
+    @staticmethod
+    def _looks_like_table_text(text: str) -> bool:
+        normalized = " ".join(text.lower().split())
+        if not normalized:
+            return False
+        if "malfunction / error" in normalized and "cause" in normalized and "remedy" in normalized:
+            return True
+        return "name" in normalized and "tab." in normalized and (
+            "unit value" in normalized or ("unit" in normalized and "value" in normalized)
+        )
+
+    @staticmethod
+    def _is_troubleshooting_table_text(text: str) -> bool:
+        normalized = " ".join(text.lower().split())
+        return (
+            "malfunction / error" in normalized
+            and "cause" in normalized
+            and "remedy" in normalized
+        )
+
+    def _recover_table_rows_from_text(self, text: str) -> list[dict[str, str]]:
+        lines = self._normalized_table_lines(text)
+        rows = self._recover_troubleshooting_rows(lines)
+        if rows:
+            return rows
+        return self._recover_name_unit_value_rows(lines)
+
+    def _normalized_table_lines(self, text: str) -> list[str]:
+        dehyphenated = re.sub(
+            r"([A-Za-z])[\u2010\u2011\u2012\u2013\u2014\u00ad-]\s*\n\s*([a-z])",
+            r"\1\2",
+            text,
+        )
+        raw_lines = [line.strip() for line in dehyphenated.splitlines() if line.strip()]
+        lines: list[str] = []
+        for line in raw_lines:
+            if self._is_footer_line(line):
+                continue
+            if lines and self._should_merge_table_line(lines[-1], line):
+                lines[-1] = f"{lines[-1]} {line}".strip()
+            else:
+                lines.append(line)
+        return lines
+
+    @staticmethod
+    def _is_footer_line(line: str) -> bool:
+        normalized = line.strip()
+        if not normalized:
+            return True
+        lowered = normalized.lower()
+        if "all rights reserved" in lowered or "©" in lowered:
+            return True
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", normalized):
+            return True
+        return bool(re.fullmatch(r"[A-Z][A-Z0-9_]*(?:\s+[A-Z_]+)?", normalized))
+
+    @staticmethod
+    def _should_merge_table_line(previous: str, current: str) -> bool:
+        headers = {"Name", "Unit", "Value", "Unit Value", "Cause", "Remedy", "Malfunction / error"}
+        if previous in headers or current in headers:
+            return False
+        if current in {"°C", "°F", "mm", "in", "l", "gal", "bar", "rpm", "kW"}:
+            return False
+        if re.fullmatch(r"[-+]?\d+(?:[.,:]\d+)*(?:\s*:\s*\d+)?", current):
+            return False
+        if current.lower().startswith("see "):
+            return False
+        if previous.endswith((":", ".", "!", "?")):
+            return False
+        if previous.count("(") > previous.count(")"):
+            return True
+        return current[:1].islower() or current.startswith(("(", "°", '"', "”"))
+
+    def _recover_troubleshooting_rows(self, lines: Sequence[str]) -> list[dict[str, str]]:
+        if "Malfunction / error" not in lines or "Cause" not in lines or "Remedy" not in lines:
+            return []
+        start = lines.index("Remedy") + 1
+        data_lines = [line for line in lines[start:] if not line.startswith("Tab.")]
+        rows: list[dict[str, str]] = []
+        current_malfunction = ""
+        index = 0
+        while index < len(data_lines):
+            line = data_lines[index]
+            if not current_malfunction or self._looks_like_malfunction_heading(line):
+                current_malfunction = line
+                index += 1
+                continue
+            if index + 1 >= len(data_lines):
+                break
+            cause = line
+            remedy = data_lines[index + 1]
+            rows.append(
+                {
+                    "malfunction": current_malfunction,
+                    "cause": cause,
+                    "remedy": remedy,
+                }
+            )
+            index += 2
+        return rows
+
+    @staticmethod
+    def _looks_like_malfunction_heading(line: str) -> bool:
+        lowered = line.lower()
+        if any(
+            lowered.startswith(token)
+            for token in [
+                "check ",
+                "replace ",
+                "contact ",
+                "fill ",
+                "drain ",
+                "clean ",
+                "run ",
+                "read ",
+                "seal ",
+                "take ",
+                "fasten ",
+                "adjust ",
+                "carry out ",
+            ]
+        ):
+            return False
+        return any(
+            token in lowered
+            for token in [
+                "will not start",
+                "difficult to start",
+                "switches off",
+                "power of the engine",
+                "engine is too hot",
+                "charging current display",
+                "black smoke",
+                "exhaust gases",
+                "engine knocks",
+                "abnormal noises",
+                "engine oil pressure is too low",
+                "engine oil is in the cooling system",
+                "coolant is in the engine oil",
+                "charge air temperature is too high",
+            ]
+        )
+
+    def _recover_name_unit_value_rows(self, lines: Sequence[str]) -> list[dict[str, str]]:
+        if "Name" not in lines:
+            return []
+        try:
+            start = lines.index("Unit Value") + 1
+        except ValueError:
+            if "Unit" not in lines or "Value" not in lines:
+                return []
+            start = max(lines.index("Unit"), lines.index("Value")) + 1
+        data_lines = [line for line in lines[start:] if not line.startswith("Tab.")]
+        rows: list[dict[str, str]] = []
+        index = 0
+        while index < len(data_lines):
+            label = data_lines[index]
+            index += 1
+            if not label:
+                continue
+            embedded_unit = ""
+            match = re.match(r"(.+?)\s+(°[CF]|mm|in|l|gal|bar|rpm|kW)$", label)
+            if match:
+                label = match.group(1).strip()
+                embedded_unit = match.group(2)
+
+            units: list[str] = [embedded_unit] if embedded_unit else []
+            values: list[str] = []
+            while index < len(data_lines):
+                token = data_lines[index]
+                if self._looks_like_name_value_label(token):
+                    break
+                if self._is_numeric_or_reference_value(token):
+                    values.append(token)
+                else:
+                    units.append(token)
+                index += 1
+
+            cleaned_units = [unit for unit in units if unit]
+            if cleaned_units and values and len(cleaned_units) == len(values):
+                rows.extend(
+                    {"name": label, "unit": unit, "value": value}
+                    for unit, value in zip(cleaned_units, values, strict=True)
+                )
+                continue
+            if values:
+                rows.append(
+                    {
+                        "name": label,
+                        "unit": " / ".join(cleaned_units),
+                        "value": " / ".join(values),
+                    }
+                )
+                continue
+            if cleaned_units:
+                rows.append({"name": label, "value": " / ".join(cleaned_units)})
+        return rows
+
+    def _looks_like_name_value_label(self, token: str) -> bool:
+        if token in {"Name", "Unit", "Value", "Unit Value"}:
+            return False
+        if token.startswith("Tab."):
+            return False
+        if self._is_unit_token(token) or self._is_numeric_or_reference_value(token):
+            return False
+        return True
+
+    @staticmethod
+    def _is_unit_token(token: str) -> bool:
+        return token in {"°C", "°F", "mm", "in", "l", "gal", "bar", "rpm", "kW"}
+
+    def _is_numeric_or_reference_value(self, token: str) -> bool:
+        normalized = token.strip()
+        if not normalized:
+            return False
+        if normalized.lower().startswith("see "):
+            return True
+        if self._is_unit_token(normalized):
+            return False
+        return bool(re.fullmatch(r"[-+]?\d+(?:[.,:]\d+)*(?:\s*:\s*\d+)?", normalized))
 
     def _pdf_chunks(
         self, pdf_bytes: bytes, *, page_limit: int | None = None,

@@ -8,8 +8,17 @@ from langgraph.graph import END, START, StateGraph
 
 from maintenance_copilot.answering import (
     build_direct_information_answer,
+    build_direct_procedure_answer,
+    build_direct_troubleshooting_answer,
     build_information_follow_up,
+    build_manual_procedure_checks,
+    build_manual_troubleshooting_checks,
+    build_procedure_follow_up,
+    build_troubleshooting_follow_up,
+    filter_procedure_evidence,
+    is_check_request,
     is_informational_query,
+    is_procedural_query,
     select_answer_evidence,
 )
 from maintenance_copilot.domain import (
@@ -77,11 +86,15 @@ class CitationFirstAnswerComposer:
         evidence: list[RetrievedChunk],
     ) -> CopilotAnswer:
         selected_evidence = select_answer_evidence(user_text, evidence)
+        if is_procedural_query(user_text):
+            selected_evidence = filter_procedure_evidence(user_text, selected_evidence)
         supporting: list[SupportingEvidence] = []
         chunk_to_citation: dict[str, str] = {}
         manual_evidence = [item for item in selected_evidence if item.chunk.is_manual]
         log_evidence = [item for item in selected_evidence if not item.chunk.is_manual]
         informational_query = is_informational_query(user_text)
+        procedural_query = is_procedural_query(user_text)
+        check_request = is_check_request(user_text)
 
         for index, item in enumerate(selected_evidence, start=1):
             prefix = "M" if item.chunk.is_manual else "L"
@@ -97,6 +110,55 @@ class CitationFirstAnswerComposer:
             )
 
         issue_summary = state.issue_summary or user_text
+        if procedural_query:
+            checks = build_manual_procedure_checks(
+                user_text=user_text,
+                manual_evidence=manual_evidence,
+                citations_by_chunk_id=chunk_to_citation,
+            )
+            return CopilotAnswer(
+                issue_summary=build_direct_procedure_answer(
+                    user_text=user_text,
+                    manual_evidence=manual_evidence,
+                    checks=checks,
+                ),
+                suspected_causes=[],
+                recommended_checks=checks,
+                required_tools=[],
+                safety_warnings=self._safety_warnings(manual_evidence, asset),
+                supporting_evidence=supporting,
+                confidence=self._information_confidence(manual_evidence),
+                urgency="low",
+                escalate_if=[],
+                follow_up_question=build_procedure_follow_up(user_text, checks),
+            )
+        if check_request:
+            checks = build_manual_troubleshooting_checks(
+                user_text=user_text,
+                manual_evidence=manual_evidence,
+                citations_by_chunk_id=chunk_to_citation,
+            )
+            if checks:
+                return CopilotAnswer(
+                    issue_summary=build_direct_troubleshooting_answer(
+                        user_text=user_text,
+                        manual_evidence=manual_evidence,
+                        checks=checks,
+                    )
+                    or issue_summary,
+                    suspected_causes=[],
+                    recommended_checks=checks,
+                    required_tools=self._required_tools(manual_evidence, log_evidence),
+                    safety_warnings=self._safety_warnings(manual_evidence, asset),
+                    supporting_evidence=supporting,
+                    confidence=self._information_confidence(manual_evidence),
+                    urgency=self._urgency(user_text, asset),
+                    escalate_if=[
+                        "The cited OEM checks do not restore the machine to a safe operating state.",
+                        "The symptom persists after the cited manual checks are completed.",
+                    ],
+                    follow_up_question=build_troubleshooting_follow_up(user_text, checks),
+                )
         if informational_query:
             return CopilotAnswer(
                 issue_summary=build_direct_information_answer(
